@@ -94,122 +94,273 @@ class GitRepository (object) :
             if vers != 0 :
                 raise Exception("Unsupported repositoryformatversion %s :( " % vers)
         
-    #creating a general path building function
-    def repo_path(repo, *path):
-        """Compute path under repo's gitdir."""
-        return os.path.join(repo.gitdir, *path)
+#creating a general path building function
+def repo_path(repo, *path):
+    """Compute path under repo's gitdir."""
+    return os.path.join(repo.gitdir, *path)
     
-    def repo_file(repo, *path, mkdir=False):
+def repo_file(repo, *path, mkdir=False):
 
-        #file version only creates directories up to the last component, thus the *path[:-1] :))
-        """Same as repo_path but create dirname(*path) if absent.
-        For example, repo_file(r, \"refs\", \"remotes\", \"origin\") will create 
-        .git/refs/remotes/origin."""
+    #file version only creates directories up to the last component, thus the *path[:-1] :))
+    """Same as repo_path but create dirname(*path) if absent.
+    For example, repo_file(r, \"refs\", \"remotes\", \"origin\") will create 
+    .git/refs/remotes/origin."""
 
-        if repo_dir(repo, *path[:-1], mkdir = mkdir):
-            return repo_path(repo, *path)
+    if repo_dir(repo, *path[:-1], mkdir = mkdir):
+        return repo_path(repo, *path)
         
-    def repo_dir(repo, *path, mkdir = False):
-        """same as repo_path, but mkdir *path is *path is absent."""
+def repo_dir(repo, *path, mkdir = False):
+    """same as repo_path, but mkdir *path is *path is absent."""
 
-        path = repo_path(repo, *path)
+    path = repo_path(repo, *path)
 
-        if os.path.exists(path):
-            if (os.path.isdir(path)):
-                return path
-            else :
-                raise Exception("Not a directory %s :( " % path)
-            
-        if mkdir:
-            os.makedirs(path)
+    if os.path.exists(path):
+        if (os.path.isdir(path)):
             return path
         else :
-            return None
+            raise Exception("Not a directory %s :( " % path)
         
-    def repo_create(path):
-        """Create a new repository at path. :) """
+    if mkdir:
+        os.makedirs(path)
+        return path
+    else :
+        return None
+        
+def repo_create(path):
+    """Create a new repository at path. :) """
 
-        repo = GitRepository(path, True)
+    repo = GitRepository(path, True)
 
-        #first we make sure that the path doesnt exist or is an empty dir
+    #first we make sure that the path doesnt exist or is an empty dir
 
-        if os.path.exists(repo.worktree):
-            if not os.path.isdir(repo.worktree):
-                raise Exception("%s is not a directory ! :( " % path)
-            if os.path.exists(repo.gitdir) and os.listdir(repo.gitdir):
-                raise Exception("%s is not empty" % path)
+    if os.path.exists(repo.worktree):
+        if not os.path.isdir(repo.worktree):
+            raise Exception("%s is not a directory ! :( " % path)
+        if os.path.exists(repo.gitdir) and os.listdir(repo.gitdir):
+            raise Exception("%s is not empty" % path)
+    else:
+        os.makedirs(repo.worktree)
+
+    assert repo_dir(repo, "branches", mkdir = True)
+    assert repo_dir(repo, "objects", mkdir = True)
+    assert repo_dir(repo, "refs", "tags", mkdir = True)
+    assert repo_dir(repo, "refs", "heads", mkdir=True)
+
+    # .git/description
+    with open(repo_file(repo, "description"), "w") as f:
+        f.write("Unnamed repository; edit this file 'description' to name the repository.\n")
+
+    # .git/HEAD
+    with open(repo_file(repo, "HEAD"), "w") as f:
+        f.write("ref: refs/heads/master\n")
+
+    with open(repo_file(repo, "config"), "w") as f:
+        config = repo_default_config()
+        config.write(f)
+
+    return repo
+    
+def repo_default_config():
+    ret = configparser.ConfigParser()
+
+    ret.add_section("core")
+    ret.set_("core", "repositoryformatversion ", "0")
+    ret.set("core", "filemode", "false")
+    ret.set("core", "bare", "false")
+
+    return ret
+    
+#parser to parse init
+argsp = argsubparsers.add_parser("init", help="initialise a new, empty repository.")
+
+#also collect the path argument and store it in args.path
+argsp.add_argument("path",
+                    metavar = "directory",
+                    nargs="?",
+                    default=".",
+                    help="where to create the repository.")
+    
+#function to call the actual creation of the git repository.
+def cmd_init(args):
+    repo_create(args.path)
+
+#this function is to find the root of the respository we are working in
+def repo_find(path=".", required=True):
+    path = os.path.realpath(path)
+
+    #the below code is basically joining the current path with the file extension ".git", what that does is makes a path
+    #that is a path to the supposed .git file in the current directory, now if the file exists, the if statement returns True
+    #and the path of th current directory is returned as the root of the gitdirectory
+    #if it doesnt find a .git file, it will go back one step and keep on doing this until it either finds the file
+    #or reaches the root of the directory
+    if os.path.isdir(os.path.join(path, ".git")):
+        return GitRepository(path)
+    
+    #if we haven't returned, recurse in parent
+    parent = os.path.realpath(os.path.join(path, ".."))
+
+    if parent == path:
+        #bottom case
+        #os.path.join("/", "..") == "/":
+        #if parent==path, then path is root
+        if required:
+            raise Exception("No git directory.")
         else:
-            os.makedirs(repo.worktree)
-
-        assert repo_dir(repo, "branches", mkdir = True)
-        assert repo_dir(repo, "objects", mkdir = True)
-        assert repo_dir(repo, "refs", "tags", mkdir = True)
-        assert repo_dir(repo, "refs", "heads", mkdir=True)
-
-        # .git/description
-        with open(repo_file(repo, "description"), "w") as f:
-            f.write("Unnamed repository; edit this file 'description' to name the repository.\n")
-
-        # .git/HEAD
-        with open(repo_file(repo, "HEAD"), "w") as f:
-            f.write("ref: refs/heads/master\n")
-
-        with open(repo_file(repo, "config"), "w") as f:
-            config = repo_default_config()
-            config.write(f)
-
-        return repo
+            return None
     
-    def repo_default_config():
-        ret = configparser.ConfigParser()
-
-        ret.add_section("core")
-        ret.set_("core", "repositoryformatversion ", "0")
-        ret.set("core", "filemode", "false")
-        ret.set("core", "bare", "false")
-
-        return ret
+    #recursive case
+    return repo_find(parent, required)
     
-    #parser to parse init
-    argsp = argsubparsers.add_parser("init", help="initialise a new, empty repository.")
-
-    #also collect the path argument and store it in args.path
-    argsp.add_argument("path",
-                       metavar = "directory",
-                       nargs="?",
-                       default=".",
-                       help="where to create the repository.")
+class GitObject (object):
+    def __init__(self, data=None):
+        if data != None:
+            self.deserialize(data)
+        else:
+            self.init()
     
-    #function to call the actual creation of the git repository.
-    def cmd_init(args):
-        repo_create(args.path)
-
-    #this function is to find the root of the respository we are working in
-    def repo_find(path=".", required=True):
-        path = os.path.realpath(path)
-
-        #the below code is basically joining the current path with the file extension ".git", what that does is makes a path
-        #that is a path to the supposed .git file in the current directory, now if the file exists, the if statement returns True
-        #and the path of th current directory is returned as the root of the gitdirectory
-        #if it doesnt find a .git file, it will go back one step and keep on doing this until it either finds the file
-        #or reaches the root of the directory
-        if os.path.isdir(os.path.join(path, ".git")):
-            return GitRepository(path)
+    def serialize(self, repo):
+        """This function must be implemented in subclasses.
+        It must read the objects contents from self.data, a byte string, and do
+        whatever it takes to convert it into a meaningful representataion.
+        What that exactly means depends on that particular subclass."""
         
-        #if we haven't returned, recurse in parent
-        parent = os.path.realpath(os.path.join(path, ".."))
+        raise Exception("Unimplemented!")
+    
+    def deserialize(self, data):
+        raise Exception("Unimplemented!")
+    
+    def init(self):
+        pass # Just do nothing. This is a reasonable default.
 
-        if parent == path:
-            #bottom case
-            #os.path.join("/", "..") == "/":
-            #if parent==path, then path is root
-            if required:
-                raise Exception("No git directory.")
-            else:
-                return None
+def object_read(repo, sha):
+    """read object sha from Git repository repo. Return a GitObject
+    whose exact type depends on the object itself"""
+
+    path = repo_file(repo, "objects", sha[0:2], sha[2:])
+
+    if not os.path.isfile(path):
+        return None
+    
+    with open (path, "rb") as f:
+        raw = zlib.decompress(f.read())
+
+        #Read object type
+        x = raw.find(b' ')
+        fmt = raw[0:x]
+
+        #read and validate object size
+        y = raw.find(b'\x00', x)
+        size = int(raw[x:y].decode("ascii"))
+        if size != len(raw)-y-1 :
+            raise Exception("Malformed Object {0}: Bad Length".format(sha))
         
-        #recursive case
-        return repo_find(parent, required)
+        #pick constructor
+        match fmt:
+            case b'commit' : c=GitCommit
+            case b'tree' : c=GitTree
+            case b'tag' : c=GitTag
+            case b'blob' : c=GitBlob
+            case _ :
+                raise Exception("Unknown type {0} for object {1}".format(fmt.decode("ascii"), sha))
+            
+        #call constructor and return object
+        return c(raw[y+1:])
+    
+def object_write(obj, repo=None):
+    
+    #serialize object data
+    data = obj.serialize()
+
+    #add header
+    result = obj.fmt + b' ' + str(len(data)).encode() + b'\x00' + data
+
+    #compute the hash
+    sha = hashlib.sha1(result).hexdigest()
+
+    if repo:
+        #compute the path
+        path = repo_path(repo, "objects", sha[0:2], sha[2:], mkdir = True)
+
+        if not os.path.exists(path):
+            with open(path, 'wb') as f:
+                #compress and write 
+                f.write(zlib.compress(result))
+    return sha
+
+class GitBlob(GitObject):
+    fmt = b'blob'
+
+    def serialize(self):
+        return self.blobdata
+    
+    def deserialize(self, data):
+        self.blobdata = data
+    
+argsp = argsubparsers.add_parser("cat-file", 
+                                 help = "provide content of repository objects")
+
+argsp.add_argument("type",
+                   metavar="type",
+                   choices=["blob", "commit", "tag", "tag"],
+                   help="Specify the type!")
+
+argsp.add_argument("object",
+                   metavar="object",
+                   help="The object to display")
+
+def cmd_cat_file(args):
+    repo = repo_find()
+    cat_file(repo, args.object, fmt=args.type.encode())
+
+def cat_file(repo, obj, fmt=None):
+    obj = object_read(repo, object_find(repo, obj, fmt=fmt))
+    sys.stdout.buffer.write(obj.serialize())
+
+def object_find(repo, name, fmt=None, follow=True):
+    return name
+
+argsp = argsubparsers.add_parser("hash-object",
+                                 help="compute ID and optionally creata a blob from a file")
+
+argsp.add_argument("-t",
+                   metavar="type",
+                   dest="type",
+                   choices=["blob", "commit", "tag", "tree"],
+                   default="blob",
+                   help="specify the type")
+
+argsp.add_argument("-w",
+                   dest="write",
+                   action="store_true",
+                   help="actually write the object into the database")
+
+argsp.add_argument("path",
+                   help="Read object from <file>")
+
+def cmd_hash_object(args):
+    if args.write:
+        repo = repo_find()
+    else:
+        repo = None
+    
+    with open(args.path, "rb") as fd:
+        sha = object_hash(fd, args.type.encode(), repo)
+        print(sha)
+
+def object_hash(fd, fmt, repo=None):
+    """Hash object, writing it to repo if provided"""
+    data = fd.read()
+
+    #choose contructor according to fmt argument
+    match fmt:
+        case b'commit' : obj=GitCommit(data)
+        case b'tree' : obj=GitTree(data)
+        case b'tag' : obj=GitTag(data)
+        case b'blob' : obj = GitBlob(data)
+        case _: raise Exception("Unknown type %s!" % fmt)
+    
+    return object_write(obj, repo)
+
 
 
 
