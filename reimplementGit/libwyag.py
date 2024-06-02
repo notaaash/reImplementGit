@@ -116,7 +116,7 @@ class GitRepository (object) :
 
         if os.path.exists(path):
             if (os.path.isdir(path)):
-                return path:
+                return path
             else :
                 raise Exception("Not a directory %s :( " % path)
             
@@ -184,9 +184,15 @@ class GitRepository (object) :
     def cmd_init(args):
         repo_create(args.path)
 
+    #this function is to find the root of the respository we are working in
     def repo_find(path=".", required=True):
         path = os.path.realpath(path)
 
+        #the below code is basically joining the current path with the file extension ".git", what that does is makes a path
+        #that is a path to the supposed .git file in the current directory, now if the file exists, the if statement returns True
+        #and the path of th current directory is returned as the root of the gitdirectory
+        #if it doesnt find a .git file, it will go back one step and keep on doing this until it either finds the file
+        #or reaches the root of the directory
         if os.path.isdir(os.path.join(path, ".git")):
             return GitRepository(path)
         
